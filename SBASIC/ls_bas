@@ -1,0 +1,78 @@
+1000 :
+1010 REMark A 'ls' procedure to produce a directory listing similar to the Unix 'ls' command
+1020 REMark Usage: ls <dirspec> where <dirspec> may be any device+wildcard specification
+1030 REMark    or: lsr <dirspec> to list directories recursively
+1040 REMark  e.g.: ls win1_, ls win1_DOCS_, lsr _doc etc.
+1050 REMark Recognises TKII default data directory and hard subdirectories on V2 devices
+1060 REMark Requirements: SMSQ, SBASIC
+1070 REMark Bugs: Wildcard match is simple INSTR operation, may need improvement
+1080 REMark       A global counter lc is used to pause listing. This assumes a fixed window length.
+1090 REMark       AFAIK there's no easy way to find this out dynamically from SBASIC :(
+1100 :
+1110 REMark v1.0 Jan Bredenbeek, 29 January 2017. Licensed under GPL v3.
+1120 :
+1130 REMark smart_date$() returns either MMM DD YYYY or MMM DD hh:mm depending on how long ago
+1140 :
+1150 DEFine FuNction smart_date$(d)
+1160 LOCal d$,y$,t$
+1170   d$=DATE$(d):y$=d$(1 TO 4):t$=d$(13 TO 17):d$=d$(6 TO 12)
+1180   IF DATE-d < 365*86400: RETurn d$&t$:ELSE RETurn d$&" "&y$
+1190 END DEFine smart_date$
+1200 :
+1210 REMark Main procedure
+1220 :
+1230 DEFine PROCedure ls(d$,r$)
+1240 LOCal ch,fnr,fl,ud,dh%,dl%,eh%,el%,dev$,dir$,dn$,fn$,wc$,t%,t$,i$,r,ls_lp,dir_printed
+1250   wc$=PARSTR$(d$,1)
+1260   ch=FOP_DIR(wc$):IF ch<0:ERT ch
+1270   REMark make dir$ hold full device+subdir
+1280   dev$=DMEDIUM_DRIVE$(#ch)&"_"
+1290   dn$=FNAME$(#ch):IF dn$<>"":dn$=dn$&"_":REMark subdir name if hard subdir
+1300   dir$=dev$&dn$
+1310   REMark make wc$ canonical
+1320   IF dn$ INSTR wc$ <> 1 AND dev$ INSTR wc$ <> 1:wc$=DATAD$&wc$
+1330   IF dev$ INSTR wc$ <> 1:wc$=DATAD$&wc$
+1340   REMark remainder of wc$ after dev+subdir is wildcard
+1350   IF LEN(wc$)>LEN(dir$):wc$=wc$(LEN(dir$) TO):ELSE wc$=""
+1360   IF wc$<>""
+1370     IF wc$(1)="_" THEN IF LEN(wc$)>1:wc$=wc$(2 TO):ELSE wc$=""
+1380   END IF
+1390   IF PARSTR$(r$,2)<>"":r=PARSTR$(r$,2):ELSE r=0:REMark recursive depth
+1400   REMark for debugging:  PRINT "dn=";dn$;" wc=";wc$;" r=";PARSTR$(r$,2);
+1410   dir_printed=0
+1420   fnr=-1:IF r<2:lc=1
+1430   REPeat ls_lp
+1440     fnr=fnr+1
+1450     GET#ch\fnr*64:IF EOF(#ch):EXIT ls_lp
+1460     LGET#ch;fl:IF fl=0:NEXT ls_lp:REMark empty dir entry
+1470     fl=fl-64:REMark subtract header length
+1480     GET#ch;t%,dh%,dl%,eh%,el%,fn$:REMark type(w),datasize(l),extra(l),filename
+1490     LGET#ch\fnr*64+52;ud:REMark update date(l)
+1500     IF LEN(dn$)>0: fn$=fn$(LEN(dn$)+1 TO):REMark chop off directory name
+1510     REMark filter on wildcard unless traversing directories recursively
+1520     IF (NOT r OR t%<>255) AND wc$<>"" AND NOT wc$ INSTR fn$: NEXT ls_lp
+1530     lc=lc+1
+1540     IF lc MOD 40=0:REMark need to change this to real # lines in window
+1550       i$=INKEY$(-1):IF i$=="q" OR i$=CHR$(27):EXIT ls_lp
+1560     END IF
+1570     SELect ON t%
+1580       =0:t$=" ":REMark normal file
+1590       =1:t$="E":REMark executable file
+1600       =2:t$="R":REMark relocatable file
+1610       =255:
+1620         IF NOT r:t$="D":fn$=fn$&" ->":ELSE ls dir$&fn$&"_"&wc$,IDEC$(r+1,1,0):NEXT ls_lp
+1630       =REMAINDER :t$="?"
+1640     END SELect
+1650     IF NOT dir_printed:PRINT dir$;":":dir_printed=1
+1660     PRINT t$;IDEC$(fl,11,0);" ";smart_date$(ud);" ";fn$
+1670   END REPeat ls_lp
+1680   CLOSE#ch
+1690 END DEFine ls
+1700 :
+1710 REMark list directories recursively
+1720 :
+1730 DEFine PROCedure lsr(d$)
+1740   ls PARSTR$(d$,1),"1"
+1750 END DEFine lsr
+1760 :
+1770 REMark -- end of ls --
